@@ -4,15 +4,23 @@
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
+#include <string.h>
 #include "my_defines.h"
 
+int  get_input_args(int argc, char *argv[], int *lb, int *ub,
+int *id, int *cook_num);
 
 int main ( int argc , char ** argv )
 {
-    int retval, id , err ;
+    int retval, id , err , lb, ub, cook_num;
     Buffer *buffer;
 
-    if ( argc <= 1) { printf (" Need shmem id . \n "); exit (1) ; }
+    /* Get input arguments */
+    if(get_input_args(argc, argv, &lb, &ub, &id, &cook_num) == -1){
+        printf("Usage: -n <number_of_salads> -m <mantime> \n");
+        return -1;
+    }
+
     /* Get id from command line . */
     sscanf ( argv [1] , "%d" , & id );
     printf ( " Allocated %d \n" , id ) ;
@@ -24,9 +32,9 @@ int main ( int argc , char ** argv )
     /* Select random set of 2 n times */
     while(buffer->n_salands){
         sem_wait(&buffer->test);
-        printf("Cook got: ");
+        //printf("Cook got: ");
         sem_post(&buffer->chef);
-        printf(" %s and %s \n", str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
+        //printf(" %s and %s \n", str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
         printf("cook: n salads %d\n", buffer->n_salands);
     } 
     
@@ -39,4 +47,29 @@ int main ( int argc , char ** argv )
 
     return 0;
 
+}
+
+int  get_input_args(int argc, char *argv[], int *lb, int *ub,
+int *id, int *cook_num){
+    
+    if(argc == 9){
+        for(int i = 1; i < argc-1; i++){
+            
+            if(!strcmp(argv[i],"-t1"))    
+                *lb = atoi(argv[i+1]);
+            
+            else if(!strcmp(argv[i],"-t2"))
+                *ub = atoi(argv[i+1]);
+                
+            else if(!strcmp(argv[i],"-s"))
+                *id = atoi(argv[i+1]);
+            
+            else if(!strcmp(argv[i],"-c"))
+                *cook_num = atoi(argv[i+1]);
+
+        }
+        return 0;
+    }
+
+    return -1;
 }
