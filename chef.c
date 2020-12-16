@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <time.h>
 #include <string.h>
+#include <unistd.h>
 #include "my_defines.h"
 
 /* Returns 2 integrities , diffrent combination from previous */
@@ -13,11 +14,19 @@ void get_integrities(int *table);
 
 int  get_input_args(int argc, char *argv[], int *numOfSalads, int *mantime);
 
+int get_cook_num(int *integrities);
+
+void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers);
+
+void rest(int mantime){ usleep(1000 * mantime); }
+
+
 int main(int argc, char *argv[]){
 
-    int retval, mantime, numOfSalads, num, id = 0, err = 0;
+    int retval, mantime, numOfSalads, id = 0, err = 0;
     Buffer *buffer;
     
+    srand(time(NULL));
     /* Get input arguments */
     if(get_input_args(argc, argv, &numOfSalads, &mantime) == -1){
         printf("Usage: -n <number_of_salads> -m <mantime> \n");
@@ -39,20 +48,38 @@ int main(int argc, char *argv[]){
     retval = sem_init (&buffer->chef,1 ,0) ;
     if ( retval != 0) {
     perror ("Couldn ’t initialize ."); exit (3) ;}
-    retval = sem_init (&buffer->test,1 ,0) ;
-    if ( retval != 0) {
-    perror ("Couldn ’t initialize ."); exit (3) ;}
+
+    for(int i = 0; i < N_SALAD_MAKERS; i++){
+        retval = sem_init (&buffer->cooks[i],1 ,0) ;
+        if ( retval != 0) {
+        perror ("Couldn ’t initialize ."); exit (3) ;}
+    }
+
     
 
     /* Select random set of 2 n times */
+    int cook_num;
     while(buffer->n_salands){
-        printf("Chef picked: ");
-        get_integrities(buffer->table);
-        printf(" %s and %s \n", str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
         printf("chef: n salads %d\n", --buffer->n_salands);
-        sem_post(&buffer->test);
+        printf("Chef picked: ");
+        
+        //Select two integrities
+        get_integrities(buffer->table); 
+        
+        //Find the proper salad maker, for the picked integrities 
+        cook_num = get_cook_num(buffer->table);
+
+        printf(" %s and %s \n", str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
+        printf("num:  %d\n", cook_num); 
+
+        sem_post(&buffer->cooks[cook_num]);
+        
+        //wait him to take the integrities
         retval = sem_wait(&buffer->chef);
+        rest(mantime);
     } 
+
+    post_rest_saladMakers(cook_num, buffer->cooks);
 
     /* Remove segment */
     err = shmctl(id , IPC_RMID , 0);
@@ -95,4 +122,28 @@ int  get_input_args(int argc, char *argv[], int *numOfSalads, int *mantime){
     }
 
     return -1;
+}
+
+
+
+int get_cook_num(int *integrities){
+
+    int cook_num;
+
+    if(tomato != integrities[0] && tomato != integrities[1])
+        cook_num = tomato;
+    else if(green_pepper != integrities[0] && green_pepper != integrities[1])
+        cook_num = green_pepper;
+    else cook_num = small_onion;
+
+    return cook_num;
+
+}
+
+
+void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers){
+    printf("test\n");
+    for(int i = 0; i < N_SALAD_MAKERS; i++)
+        if(i != exclude_saladMaker)
+            sem_post(&saladMakers[i]);
 }
