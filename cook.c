@@ -7,17 +7,45 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/times.h>  /* times() */
 #include "my_defines.h"
+
+int
+timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
+{
+  /* Perform the carry for the later subtraction by updating @var{y}. */
+  if (x->tv_usec < y->tv_usec) {
+    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
+    y->tv_usec -= 1000000 * nsec;
+    y->tv_sec += nsec;
+  }
+  if (x->tv_usec - y->tv_usec > 1000000) {
+    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
+    y->tv_usec += 1000000 * nsec;
+    y->tv_sec -= nsec;
+  }
+
+  /* Compute the time remaining to wait.
+     @code{tv_usec} is certainly positive. */
+  result->tv_sec = x->tv_sec - y->tv_sec;
+  result->tv_usec = x->tv_usec - y->tv_usec;
+
+  /* Return 1 if result is negative. */
+  return x->tv_sec < y->tv_sec;
+}
 
 int  get_input_args(int argc, char *argv[], int *lb, int *ub,
 int *id, int *cook_num);
 
-void make_salad(int worktime){ usleep(worktime * 1000);}
+/* Making a salad in random time between lb and ub */
+void make_salad(int lb, int ub);   
 
 int main ( int argc , char ** argv )
 {
     int retval, id , err , lb, ub, cook_num;
     Buffer *buffer;
+
+    struct timeval t1, t2, elapsed;
 
 
     /* Get input arguments */
@@ -26,10 +54,17 @@ int main ( int argc , char ** argv )
         return -1;
     }
 
+
+    FILE *logfile, *global_log;
+    int pid = getpid();
+
+    char filename[100];
+    sprintf(filename, "salad_maker%d_%d.txt", cook_num, pid);
+    printf("%s\n", filename);
+    logfile = fopen(filename, "a");
+
     srand(time(NULL));
-    int worktime, timeRange = lb-ub;
-    if(timeRange > 0)worktime = (rand() % (lb-ub)) + ub;
-    else worktime = 0;
+
 
     /* Get id from command line . */
     sscanf ( argv [1] , "%d" , & id );
@@ -38,15 +73,36 @@ int main ( int argc , char ** argv )
     /* Attach the segment . */
     buffer = (Buffer *)shmat(id ,( void *) 0, 0);
     if (buffer == ( void *) -1) { perror (" Attachment ."); exit (2) ;}
+    global_log = fopen(buffer->logfile, "a");
 
-    /* Select random set of 2 n times */
+    gettimeofday(&t1, NULL);
+
+    char timestr[30];
+    
+    /* Take integrities from chef(read) , write in log files */
     while(buffer->n_salands){
+
+        //Wait for chef to give integrities
+        fprintf(logfile,"salad_maker%d Waiting for integrities\n", cook_num);
         sem_wait(&buffer->cooks[cook_num]);
-        printf("salad_maker%d got: ", cook_num);
+
+        fprintf(logfile,"salad_maker%d get %s and %s\n", cook_num, \
+        str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
+       
+        
+        //Inform chef that integrities received
         sem_post(&buffer->chef);
-        make_salad(worktime);
-        printf(" %s and %s \n", str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
-        printf("salad_maker: n salads %d\n", buffer->n_salands);
+        gettimeofday(&t2, NULL);
+        
+        timeval_subtract(&elapsed, &t2, &t1);
+        
+        fprintf(logfile, "%02ld:%02ld:%.2f",elapsed.tv_sec/60, elapsed.tv_sec % 60, (float)elapsed.tv_usec/1000);
+
+        fprintf(logfile,"salad_maker%d start making salad\n", cook_num);
+        make_salad(lb,ub);
+        fprintf(logfile,"salad_maker%d end making salad\n", cook_num);     
+       
+        fprintf(logfile,"salad_maker: n salads %d\n", buffer->n_salands);
     } 
     
     
@@ -56,6 +112,7 @@ int main ( int argc , char ** argv )
     else printf (" Removed . % d\n" , ( int )( err )) ;
     sem_destroy (&buffer->chef);
 
+    fclose(logfile);
     return 0;
 
 }
@@ -86,3 +143,10 @@ int *id, int *cook_num){
 }
 
 
+
+void make_salad(int lb, int ub){     
+    int worktime, timeRange = lb-ub;
+    if(timeRange > 0)worktime = (rand() % (lb-ub)) + ub;
+    else worktime = 0;
+    usleep(worktime * 1000);
+}

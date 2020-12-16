@@ -8,7 +8,9 @@ typedef struct Buffer{
     int table[2];
     sem_t cooks[3];
     sem_t chef;
+    sem_t write;
     int n_salands;
+    char logfile[30];
 }Buffer;
 
 enum Integrities{
