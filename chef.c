@@ -102,15 +102,16 @@ int main(int argc, char *argv[]){
         sprintf(msg, "Selecting integrities %s  %s"\
         ,str_integrities[integrities[0]], str_integrities[integrities[1]]);
         printf("%s\n", msg);
-
-        //Writing to logfile
+        fflush(stdout);
+        //Writing in the logfile
         sem_wait(&buffer->log);
         
         gettimeofday(&t2, NULL);
         time_elapsed(&elapsed, &t2, &buffer->t1);
         time_to_string(elapsed, timeStr);
         fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
-        
+        fflush(logfile);
+
         sem_post(&buffer->log);
 
 
@@ -126,15 +127,16 @@ int main(int argc, char *argv[]){
         /*  Notify the saladmaker */
         sprintf(msg, "Notify saladmaker %d", cook_num);
         printf("%s\n", msg);
+        fflush(stdout);
 
-
-        //Writing to logfile
+        //Writing in the logfile
         sem_wait(&buffer->log);
 
         gettimeofday(&t2, NULL);
         time_elapsed(&elapsed, &t2, &buffer->t1);
         time_to_string(elapsed, timeStr);
         fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+        fflush(logfile);
 
         sem_post(&buffer->log);
 
@@ -145,7 +147,8 @@ int main(int argc, char *argv[]){
         //wait salad maker to take the integrities
         retval = sem_wait(&buffer->chef);
         printf("remaining salads %d\n", buffer->n_salands);
-
+        fflush(stdout);
+        
         sprintf(msg, "Man time for resting");
         printf("%s\n", msg);
         
@@ -156,7 +159,8 @@ int main(int argc, char *argv[]){
         time_elapsed(&elapsed, &t2, &buffer->t1);
         time_to_string(elapsed, timeStr);
         fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
-
+        fflush(logfile);
+        
         sem_post(&buffer->log);
 
         rest(mantime);

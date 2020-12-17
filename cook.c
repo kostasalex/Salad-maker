@@ -27,6 +27,7 @@ integrities[1] = table[1];table[1] = EMPTY;}
 int main ( int argc , char ** argv )
 {
     int retval, id , err , lb, ub, cook_num;
+    char timeStr[30], msg[100];
     Buffer *buffer;
 
     struct timeval t2, elapsed;
@@ -65,40 +66,101 @@ int main ( int argc , char ** argv )
     /* Take integrities from chef(read) , write in log files */
     while(buffer->n_salands){
 
-        //Wait for chef notification
-        fprintf(logfile,"salad_maker%d Waiting for integrities\n", cook_num);
+        /* Waiting for chef notification */
+        sprintf(msg, "Waiting for integrities");
+
+        //Writing in the logfiles
+        fprintf(logfile, "%s\n", msg);
+        fflush(logfile);
+
+        sem_wait(&buffer->log);
+        
+        gettimeofday(&t2, NULL);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        time_to_string(elapsed, timeStr);
+        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        cook_num, msg);
+        fflush(global_log);
+
+        sem_post(&buffer->log);
+
         sem_wait(&buffer->cooks[cook_num]);
 
+
         if(isTableEmpty(buffer->table))break; //All salads done while waiting
-        
-        //Get integrities from table
+
+
+        /* Get integrities from table */
         sem_wait(&buffer->access_table);
         getIntegrities(integrities, buffer->table);
         sem_post(&buffer->access_table);
 
-        fprintf(logfile,"salad_maker: salads remaining %d\n", buffer->n_salands);
+        fprintf(logfile,"salads remaining %d\n", buffer->n_salands);
+        fflush(logfile);
+
         //Inform chef that integrities retrieved
         sem_post(&buffer->chef);
 
-        //Write in local logfile
-        fprintf(logfile,"salad_maker%d get %s and %s\n", cook_num, \
+        //Writing in the logfiles
+        sprintf(msg, "Get %s   %s", \
         str_integrities[integrities[0]], str_integrities[integrities[1]]);
 
-        //Write in global logfile
-        gettimeofday(&t2, NULL);
-        
+        fprintf(logfile, "%s\n", msg);
+        fflush(logfile);
+
         sem_wait(&buffer->log);
+        
+        gettimeofday(&t2, NULL);
         time_elapsed(&elapsed, &t2, &buffer->t1);
-        fprintf(global_log, "[salad_maker%d] [%02ld:%02ld:%.2f]\n",cook_num,elapsed.tv_sec/60, elapsed.tv_sec % 60, (float)elapsed.tv_usec/1000);
+        time_to_string(elapsed, timeStr);
+        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        cook_num, msg);
         fflush(global_log);
+
         sem_post(&buffer->log);
 
-        //Write in local logfile
-        fprintf(logfile,"salad_maker%d start making salad\n", cook_num);
+
+
+        /* Start making salad */
+        sprintf(msg, "Start making salad");
+
+        //Writing in the logfiles
+        fprintf(logfile, "%s\n", msg);
+        fflush(logfile);
+
+        sem_wait(&buffer->log);
+        
+        gettimeofday(&t2, NULL);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        time_to_string(elapsed, timeStr);
+        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        cook_num, msg);
+        fflush(global_log);
+
+        sem_post(&buffer->log);
+
         make_salad(lb,ub);
 
-        //Write in local logfile
-        fprintf(logfile,"salad_maker%d end making salad\n", cook_num);     
+
+
+        /* End making salad */
+        sprintf(msg, "End making salad");
+
+        //Writing in the logfiles
+        fprintf(logfile, "%s\n", msg);
+        fflush(logfile);
+
+        sem_wait(&buffer->log);
+        
+        gettimeofday(&t2, NULL);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        time_to_string(elapsed, timeStr);
+        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        cook_num, msg);
+        fflush(global_log);
+
+        sem_post(&buffer->log);
+   
        
     } 
     
@@ -146,8 +208,8 @@ int *id, int *cook_num){
 
 
 void make_salad(int lb, int ub){     
-    int worktime, timeRange = lb-ub;
-    if(timeRange > 0)worktime = (rand() % (lb-ub)) + ub;
+    int worktime, timeRange = ub-lb;
+    if(timeRange > 0)worktime = (rand() % (ub-lb)) + lb;
     else worktime = 0;
     usleep(worktime * 1000);
 }
