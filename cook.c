@@ -7,32 +7,10 @@
 #include <string.h>
 #include <unistd.h>
 #include <time.h>
-#include <sys/times.h>  /* times() */
+#include <sys/time.h>  
 #include "my_defines.h"
+#include "time_utils.h"
 
-int
-timeval_subtract (struct timeval *result, struct timeval *x, struct timeval *y)
-{
-  /* Perform the carry for the later subtraction by updating @var{y}. */
-  if (x->tv_usec < y->tv_usec) {
-    int nsec = (y->tv_usec - x->tv_usec) / 1000000 + 1;
-    y->tv_usec -= 1000000 * nsec;
-    y->tv_sec += nsec;
-  }
-  if (x->tv_usec - y->tv_usec > 1000000) {
-    int nsec = (x->tv_usec - y->tv_usec) / 1000000;
-    y->tv_usec += 1000000 * nsec;
-    y->tv_sec -= nsec;
-  }
-
-  /* Compute the time remaining to wait.
-     @code{tv_usec} is certainly positive. */
-  result->tv_sec = x->tv_sec - y->tv_sec;
-  result->tv_usec = x->tv_usec - y->tv_usec;
-
-  /* Return 1 if result is negative. */
-  return x->tv_sec < y->tv_sec;
-}
 
 int  get_input_args(int argc, char *argv[], int *lb, int *ub,
 int *id, int *cook_num);
@@ -40,12 +18,18 @@ int *id, int *cook_num);
 /* Making a salad in random time between lb and ub */
 void make_salad(int lb, int ub);   
 
+int isTableEmpty(int *table){return table[0] == EMPTY;}
+
+void getIntegrities(int *integrities, int *table)
+{integrities[0] = table[0];table[0] = EMPTY;
+integrities[1] = table[1];table[1] = EMPTY;}
+
 int main ( int argc , char ** argv )
 {
     int retval, id , err , lb, ub, cook_num;
     Buffer *buffer;
 
-    struct timeval t1, t2, elapsed;
+    struct timeval t2, elapsed;
 
 
     /* Get input arguments */
@@ -75,34 +59,47 @@ int main ( int argc , char ** argv )
     if (buffer == ( void *) -1) { perror (" Attachment ."); exit (2) ;}
     global_log = fopen(buffer->logfile, "a");
 
-    gettimeofday(&t1, NULL);
+    int integrities[3];
+    integrities[2] = cook_num;//Salad maker integrity
 
-    char timestr[30];
-    
     /* Take integrities from chef(read) , write in log files */
     while(buffer->n_salands){
 
-        //Wait for chef to give integrities
+        //Wait for chef notification
         fprintf(logfile,"salad_maker%d Waiting for integrities\n", cook_num);
         sem_wait(&buffer->cooks[cook_num]);
 
-        fprintf(logfile,"salad_maker%d get %s and %s\n", cook_num, \
-        str_integrities[buffer->table[0]], str_integrities[buffer->table[1]]);
-       
+        if(isTableEmpty(buffer->table))break; //All salads done while waiting
         
-        //Inform chef that integrities received
+        //Get integrities from table
+        sem_wait(&buffer->access_table);
+        getIntegrities(integrities, buffer->table);
+        sem_post(&buffer->access_table);
+
+        fprintf(logfile,"salad_maker: salads remaining %d\n", buffer->n_salands);
+        //Inform chef that integrities retrieved
         sem_post(&buffer->chef);
+
+        //Write in local logfile
+        fprintf(logfile,"salad_maker%d get %s and %s\n", cook_num, \
+        str_integrities[integrities[0]], str_integrities[integrities[1]]);
+
+        //Write in global logfile
         gettimeofday(&t2, NULL);
         
-        timeval_subtract(&elapsed, &t2, &t1);
-        
-        fprintf(logfile, "%02ld:%02ld:%.2f",elapsed.tv_sec/60, elapsed.tv_sec % 60, (float)elapsed.tv_usec/1000);
+        sem_wait(&buffer->log);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        fprintf(global_log, "[salad_maker%d] [%02ld:%02ld:%.2f]\n",cook_num,elapsed.tv_sec/60, elapsed.tv_sec % 60, (float)elapsed.tv_usec/1000);
+        fflush(global_log);
+        sem_post(&buffer->log);
 
+        //Write in local logfile
         fprintf(logfile,"salad_maker%d start making salad\n", cook_num);
         make_salad(lb,ub);
+
+        //Write in local logfile
         fprintf(logfile,"salad_maker%d end making salad\n", cook_num);     
        
-        fprintf(logfile,"salad_maker: n salads %d\n", buffer->n_salands);
     } 
     
     
@@ -112,7 +109,11 @@ int main ( int argc , char ** argv )
     else printf (" Removed . % d\n" , ( int )( err )) ;
     sem_destroy (&buffer->chef);
 
+    shmdt((void *) 0);
+
     fclose(logfile);
+
+    fclose(global_log);
     return 0;
 
 }

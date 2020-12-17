@@ -4,11 +4,10 @@
 #include <sys/shm.h>
 #include <semaphore.h>
 #include <stdlib.h>
-#include <time.h>
 #include <string.h>
 #include <unistd.h>
 #include "my_defines.h"
-
+#include "time_utils.h"
 
 
 int  get_input_args(int argc, char *argv[], int *numOfSalads, int *mantime);
@@ -19,14 +18,20 @@ void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers);
 
 void rest(int mantime){ usleep(1000 * mantime); }
 
-/* Returns 2 integrities , diffrent combination from previous */
-void get_integrities(int *table);
+/* Returns 2 integrities with different combination from previous */
+void get_integrities(int *integrities);
+
+void place_integrities(int *table, int *integrities)
+{table[0] = integrities[0]; table[1] = integrities[1];}
 
 int main(int argc, char *argv[]){
 
+    char timeStr[30], msg[100];
+    struct timeval t2, elapsed;
+    
     int retval, mantime, numOfSalads, id = 0, err = 0;
     Buffer *buffer;
-    
+
     srand(time(NULL));
     /* Get input arguments */
     if(get_input_args(argc, argv, &numOfSalads, &mantime) == -1){
@@ -34,6 +39,7 @@ int main(int argc, char *argv[]){
         return -1;
     }
 
+    /* Create a logfile for all processes*/
     FILE *logfile;
     int pid = getpid();
 
@@ -43,7 +49,6 @@ int main(int argc, char *argv[]){
     logfile = fopen(filename, "a");
     srand(time(NULL));
 
-
     /* Make shared memory segment */
     id = shmget(IPC_PRIVATE , SEGMENTSIZE , SEGMENTPERM) ; 
     if(id == (void *) -1) perror(" Creation ");
@@ -52,60 +57,119 @@ int main(int argc, char *argv[]){
     /* Attach the segment */
     buffer = (Buffer*) shmat(id ,( void *) 0, 0) ; 
     if (buffer == (void *) -1){ perror(" Attachment ."); exit(2);}
-    buffer->n_salands = numOfSalads;
-    sprintf(buffer->logfile, filename);
 
-    /* Initialize the semaphores . */
+    /* Set values to the shared variables*/
+    buffer->n_salands = numOfSalads;     
+    sprintf(buffer->logfile, filename);   
+    gettimeofday(&buffer->t1, NULL);     //Keep a global time for all processes
+    buffer->table[0] = EMPTY;
+    buffer->table[1] = EMPTY;
+
+    /* Remove segment after the last detachment */
+    err = shmctl(id , IPC_RMID , 0);
+    if (err == -1)perror(" Removal . ");
+    else printf(" Removed . % d\n" ,( int )( err ));
+    
+    /* Initialize the semaphores  */
     retval = sem_init (&buffer->chef,1 ,0) ;
     if ( retval != 0) {
     perror ("Couldn ’t initialize ."); exit (3) ;}
 
-    retval = sem_init (&buffer->write,1 ,0) ;
+    retval = sem_init (&buffer->log,1 ,1) ;
     if ( retval != 0) {
     perror ("Couldn ’t initialize ."); exit (3) ;}
-    
+
+    retval = sem_init (&buffer->access_table,1 ,1) ;
+    if ( retval != 0) {
+    perror ("Couldn ’t initialize ."); exit (3) ;}
+
+
     for(int i = 0; i < N_SALAD_MAKERS; i++){
         retval = sem_init (&buffer->cooks[i],1 ,0) ;
         if ( retval != 0) {
         perror ("Couldn ’t initialize ."); exit (3) ;}
     }
 
-    
 
     /* Give 2 integrities(write) to proper salad maker*/
-    int cook_num;
-    while(buffer->n_salands){
-        printf("chef: n salads %d\n", --buffer->n_salands);
-        printf("Chef selecting ingredients  ");
+    int cook_num, integrities[2];
+
+    while(buffer->n_salands--){
         
-        //Select two integrities
-        get_integrities(buffer->table); 
-        printf(" %s and %s \n", str_integrities[buffer->table[0]], \
-        str_integrities[buffer->table[1]]);
+        /* Select two integrities */
+        get_integrities(integrities);
 
-        //Find the proper salad maker, for the picked integrities 
-        cook_num = get_cook_num(buffer->table);
+        sprintf(msg, "Selecting integrities %s  %s"\
+        ,str_integrities[integrities[0]], str_integrities[integrities[1]]);
+        printf("%s\n", msg);
 
-        printf("num:  %d\n", cook_num); 
+        //Writing to logfile
+        sem_wait(&buffer->log);
+        
+        gettimeofday(&t2, NULL);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        time_to_string(elapsed, timeStr);
+        fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+        
+        sem_post(&buffer->log);
 
-        printf("Notify saladmaker %d\n", cook_num);
+
+
+        /* Find the proper salad maker, for the selected integrities */ 
+        cook_num = get_cook_num(integrities);
+
+        /* Place integrities in table */
+        sem_wait(&buffer->access_table);
+        place_integrities(buffer->table, integrities);
+        sem_post(&buffer->access_table);
+
+        /*  Notify the saladmaker */
+        sprintf(msg, "Notify saladmaker %d", cook_num);
+        printf("%s\n", msg);
+
+
+        //Writing to logfile
+        sem_wait(&buffer->log);
+
+        gettimeofday(&t2, NULL);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        time_to_string(elapsed, timeStr);
+        fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+
+        sem_post(&buffer->log);
 
         sem_post(&buffer->cooks[cook_num]);
+
+
         
         //wait salad maker to take the integrities
         retval = sem_wait(&buffer->chef);
+        printf("remaining salads %d\n", buffer->n_salands);
 
-        printf("Man time for resting \n");
+        sprintf(msg, "Man time for resting");
+        printf("%s\n", msg);
+        
+        //Writing to logfile
+        sem_wait(&buffer->log);
+
+        gettimeofday(&t2, NULL);
+        time_elapsed(&elapsed, &t2, &buffer->t1);
+        time_to_string(elapsed, timeStr);
+        fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+
+        sem_post(&buffer->log);
+
         rest(mantime);
     } 
 
-    printf("Inform salad makers that job done \n");
+    buffer->table[0] = EMPTY;
+    buffer->table[1] = EMPTY;
+
+
+    printf("Inform salad makers that job is done \n");
     post_saladMakers(cook_num, buffer->cooks);
 
-    /* Remove segment */
-    err = shmctl(id , IPC_RMID , 0);
-    if (err == -1)perror(" Removal . ");
-    else printf(" Removed . % d\n" ,( int )( err ));
+    
     sem_destroy(&buffer->chef);
 
     for(int i = 0; i < N_SALAD_MAKERS; i++){
@@ -114,20 +178,21 @@ int main(int argc, char *argv[]){
         perror ("Couldn ’t initialize ."); exit (3) ;}
     }
 
+    fclose(logfile);
     return 0;
 
 }
 
 
-void get_integrities(int *table){
+void get_integrities(int *integrities){
 
     int integrity;
 
-    table[0] = rand() % 3;
+    integrities[0] = rand() % 3;
 
-    while((integrity = rand() % 3) ==  table[0] || integrity == table[1]);
+    while((integrity = rand() % 3) ==  integrities[0] || integrity == integrities[1]);
 
-    table[1] = integrity;
+    integrities[1] = integrity;
 
 
 }
@@ -170,6 +235,6 @@ int get_cook_num(int *integrities){
 
 void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers){
     for(int i = 0; i < N_SALAD_MAKERS; i++)
-        if(i != exclude_saladMaker)
-            sem_post(&saladMakers[i]);
+        //if(i != exclude_saladMaker)
+        sem_post(&saladMakers[i]);
 }
