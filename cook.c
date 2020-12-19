@@ -60,11 +60,13 @@ int main ( int argc , char ** argv )
     if (buffer == ( void *) -1) { perror (" Attachment ."); exit (2) ;}
     global_log = fopen(buffer->logfile, "a");
 
+    buffer->cooks_pid[cook_num] = pid;
+
     int integrities[3];
     integrities[2] = cook_num;//Salad maker integrity
 
     /* Take integrities from chef(read) , write in log files */
-    while(buffer->n_salands){
+    while(buffer->n_salands >= 0){
 
         /* Waiting for chef notification */
         sprintf(msg, "Waiting for integrities");
@@ -159,10 +161,15 @@ int main ( int argc , char ** argv )
         cook_num, msg);
         fflush(global_log);
 
+        /* decrement total salads */
+        --buffer->n_salands;
+        /* Iscrease salads done */
+        ++buffer->saladsDone[cook_num];
+
         sem_post(&buffer->log);
-   
-       
+
     } 
+    sem_post(&buffer->chef);
     
     
     /* Remove segment . */
