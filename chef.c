@@ -24,6 +24,7 @@ void rest(int mantime){ usleep(1000 * mantime); }
 /* Returns 2 integrities with different combination from previous */
 void get_integrities(int *integrities);
 
+int count_concured(int *pid);
 
 void place_integrities(int *table, int *integrities)
 {table[0] = integrities[0]; table[1] = integrities[1];}
@@ -219,8 +220,6 @@ int main(int argc, char *argv[]){
     printf("Inform salad makers that job is done \n");
     post_saladMakers(cook_num, buffer->cooks);
 
-
-
     /*** Stdout of chef: ***/
 
     printf("\nTotal #salads: %d\n", numOfSalads - buffer->n_salands);
@@ -247,18 +246,18 @@ int main(int argc, char *argv[]){
     Record records[lines];
     get_records(logfile, records, lines);
 
-    int concured_pid[N_SALAD_MAKERS], concured_counter = 0, start = -1;
+    int concured_pid[N_SALAD_MAKERS], has_concured = 0, start = -1,
+    prev_concured;
 
     for(int i = 0; i < N_SALAD_MAKERS; i++)concured_pid[i] = 0;
 
     /* Find concured processes */
     for(int r = 0, i = 0; r < lines; r++){
         //printf("%s\n", records[r].msg_part);
-
+        prev_concured = count_concured(concured_pid);
         /* start of time interval */
         if(!strcmp(records[r].msg_part, "Get")){
-            if(start == -1)
-                start = r;              
+            if(count_concured(concured_pid) == 1 || start == -1)start = r;              
             concured_pid[records[r].cook_num]++;
 
         }
@@ -268,12 +267,10 @@ int main(int argc, char *argv[]){
         /* End of time interval, search if 2=< processed run concurrently */
         else if(!strcmp(records[r].msg_part, "End")){
             
-            for(int j = 0; j < N_SALAD_MAKERS; j++)
-                if(concured_pid[j])concured_counter++;
-
             //return 0;
             //Print start - end time
-            if(concured_counter >= 2 && start != -1){
+            if(count_concured(concured_pid) >= 2 && start != -1){
+                has_concured = 1;
                 printf("[%s - %s]", records[start].time, records[r].time );
 
                 //Print saladmakers that worked concurrently 
@@ -283,15 +280,12 @@ int main(int argc, char *argv[]){
                 printf("\n");
             }
 
-            concured_counter = 0;
             concured_pid[records[r].cook_num] = 0;
             start =  -1;
         }
 
-        
-
     }
-
+    if(!has_concured)printf("No concured processes found\n");
 
 
     sem_destroy(&buffer->chef);
@@ -420,4 +414,15 @@ void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers){
     for(int i = 0; i < N_SALAD_MAKERS; i++)
         //if(i != exclude_saladMaker)
         sem_post(&saladMakers[i]);
+}
+
+
+int count_concured(int *pid){
+
+    int concured_counter = 0;
+
+    for(int i = 0; i < N_SALAD_MAKERS; i++)
+        if(pid[i])concured_counter++;
+
+    return concured_counter;
 }
