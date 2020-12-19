@@ -24,7 +24,7 @@ void rest(int mantime){ usleep(1000 * mantime); }
 /* Returns 2 integrities with different combination from previous */
 void get_integrities(int *integrities);
 
-int count_concured(int *pid);
+int count_concurent(int *working_pid);
 
 void place_integrities(int *table, int *integrities)
 {table[0] = integrities[0]; table[1] = integrities[1];}
@@ -246,46 +246,69 @@ int main(int argc, char *argv[]){
     Record records[lines];
     get_records(logfile, records, lines);
 
-    int concured_pid[N_SALAD_MAKERS], has_concured = 0, start = -1,
-    prev_concured;
+    int working_saladmaker[N_SALAD_MAKERS], has_concurent = 0, start = -1,
+    prev_concurent, concurent;
 
-    for(int i = 0; i < N_SALAD_MAKERS; i++)concured_pid[i] = 0;
+    for(int i = 0; i < N_SALAD_MAKERS; i++)working_saladmaker[i] = 0;
 
     /* Find concured processes */
     for(int r = 0, i = 0; r < lines; r++){
-        //printf("%s\n", records[r].msg_part);
-        prev_concured = count_concured(concured_pid);
-        /* start of time interval */
-        if(!strcmp(records[r].msg_part, "Get")){
-            if(count_concured(concured_pid) == 1 || start == -1)start = r;              
-            concured_pid[records[r].cook_num]++;
 
+        prev_concurent = count_concurent(working_saladmaker);
+        
+        /* Start working */
+        if(!strcmp(records[r].msg_part, "Get")){           
+            working_saladmaker[records[r].cook_num]++;
+            if((concurent = count_concurent(working_saladmaker)) > prev_concurent){
+                
+                /* Start of 2 concurent processes*/
+                if(concurent == 2)
+                    start = r;
+                /* Start of 3 concurent processes - end of 2 concurent */
+                else if(concurent == 3){
+                    if(start != -1){
+                        printf("[%s - %s]", records[start].time, records[r-1].time );
+
+                        //Print saladmakers that worked concurrently 
+                        for(int j = 0; j < N_SALAD_MAKERS; j++)
+                        {
+                            if(working_saladmaker[j] && j != records[r].cook_num)
+                                printf(" saladmaker%d ", j);
+                        }
+                        printf("\n");
+
+                        start = r;
+                    }
+                    else start = r;
+                }
+            }
         }
-        else if(!strcmp(records[r].msg_part, "Start"))
-            concured_pid[records[r].cook_num]++;
 
-        /* End of time interval, search if 2=< processed run concurrently */
-        else if(!strcmp(records[r].msg_part, "End")){
+        /* End working  */
+        else if(!strcmp(records[r].msg_part, "End") || r == lines-1){
             
-            //return 0;
-            //Print start - end time
-            if(count_concured(concured_pid) >= 2 && start != -1){
-                has_concured = 1;
+            /* End of 2 or 3 concurrent processes */
+            if((concurent = count_concurent(working_saladmaker)) >= 2 && start != -1){
                 printf("[%s - %s]", records[start].time, records[r].time );
-
+                
                 //Print saladmakers that worked concurrently 
                 for(int j = 0; j < N_SALAD_MAKERS; j++)
-                    if(concured_pid[j])printf(" saladmaker%d ", j);
+                    if(working_saladmaker[j])printf(" saladmaker%d ", j);
 
                 printf("\n");
+                if(concurent == 2)
+                    start = -1;
+                else if(r+1 < lines) start = r+1;
             }
 
-            concured_pid[records[r].cook_num] = 0;
-            start =  -1;
+            working_saladmaker[records[r].cook_num] = 0;
         }
 
+        if(count_concurent(working_saladmaker) >= 2)has_concurent = 1;
+
     }
-    if(!has_concured)printf("No concured processes found\n");
+
+    if(!has_concurent)printf("No concured processes found\n");
 
 
     sem_destroy(&buffer->chef);
@@ -417,7 +440,7 @@ void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers){
 }
 
 
-int count_concured(int *pid){
+int count_concurent(int *pid){
 
     int concured_counter = 0;
 
