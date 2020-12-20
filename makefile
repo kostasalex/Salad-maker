@@ -27,4 +27,4 @@ cook.o: cook.c
 
 clean:
 	@echo " Cleaning . . ."
-	rm -f *.o chef salad_maker
+	rm -f *.o *.txt chef salad_maker
