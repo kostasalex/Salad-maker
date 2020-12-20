@@ -3,42 +3,28 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <semaphore.h>
-#include <stdlib.h>
-#include <string.h>
 #include <unistd.h>
 #include "my_defines.h"
-#include "time_utils.h"
+#include "utils.h"
+
 
 
 int  get_input_args(int argc, char *argv[], int *numOfSalads, int *mantime);
 
+/* Returns 2 integrities with different combination from previous */
+void get_integrities(int *integrities);
+
 /* Finds the proper saladmaker */
 int get_cook_num(int *integrities);
 
-/* Inform all salad makers that job is done */
-void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers);
+/* Put integrities on the table*/
+void place_integrities(int *table, int *integrities);
 
 
 void rest(int mantime){ usleep(1000 * mantime); }
 
-/* Returns 2 integrities with different combination from previous */
-void get_integrities(int *integrities);
-
-int count_concurent(int *working_pid);
-
-void place_integrities(int *table, int *integrities)
-{table[0] = integrities[0]; table[1] = integrities[1];}
-
-
-
-typedef struct Record{
-    char time[30], pid[10] ,msg_part[10];
-    int cook_num;  
-}Record;
-
-
-/* Exctracts all the needed info from logfile */
-void get_records(FILE *logfile, Record *records, int n_records);
+/* Inform all salad makers that job is done */
+void post_saladMakers(sem_t *saladMakers);
 
 
 
@@ -46,13 +32,10 @@ int main(int argc, char *argv[]){
 
     srand(time(NULL));
     
-    char timeStr[30], msg[100];
-    struct timeval t2, elapsed;
+    char timeStr[30], msg[100], file_msg[100];
     int retval, mantime, numOfSalads, id = 0, err = 0;
 
     Buffer *buffer;
-
-
 
 
     /* Get input arguments */
@@ -62,17 +45,15 @@ int main(int argc, char *argv[]){
     }
 
 
-
     /* Create a logfile for all processes*/
     FILE *logfile;
     int pid = getpid();
 
     char filename[100];
     sprintf(filename, "logfile_%d.txt", pid);
-    printf("%s\n", filename);
+    printf("Creating a global logfile %s\n", filename);
     logfile = fopen(filename, "a");
     srand(time(NULL));
-
 
 
     /* Make shared memory segment */
@@ -81,11 +62,9 @@ int main(int argc, char *argv[]){
     else printf("Allocated . %d\n" ,( int ) id);
 
 
-
     /* Attach the segment */
     buffer = (Buffer*) shmat(id ,( void *) 0, 0) ; 
     if (buffer == (void *) -1){ perror(" Attachment ."); exit(2);}
-
 
 
     /* Set values to the shared variables*/
@@ -99,129 +78,125 @@ int main(int argc, char *argv[]){
         buffer->saladsDone[i] = 0;
 
 
-
     /* Removes segment after the last detachment */
     err = shmctl(id , IPC_RMID , 0);
     if (err == -1)perror(" Removal . ");
     else printf(" Removed . % d\n" ,( int )( err ));
     
 
-
     /* Initialize the semaphores  */
-    retval = sem_init (&buffer->chef,1 ,0) ;
+    retval = sem_init(&buffer->chef,1 ,0); 
     if ( retval != 0) {
-    perror ("Couldn ’t initialize ."); exit (3) ;}
+    perror ("Couldn ’t initialize ."); exit(3) ;}
 
-    retval = sem_init (&buffer->log,1 ,1) ;
+    retval = sem_init(&buffer->log,1 ,1);
     if ( retval != 0) {
-    perror ("Couldn ’t initialize ."); exit (3) ;}
+    perror ("Couldn ’t initialize ."); exit(3) ;}
 
     retval = sem_init (&buffer->access_table,1 ,1) ;
     if ( retval != 0) {
-    perror ("Couldn ’t initialize ."); exit (3) ;}
-
+    perror ("Couldn ’t initialize ."); exit(3) ;}
 
     for(int i = 0; i < N_SALAD_MAKERS; i++){
         retval = sem_init (&buffer->cooks[i],1 ,0) ;
         if ( retval != 0) {
-        perror ("Couldn ’t initialize ."); exit (3) ;}
+        perror ("Couldn ’t initialize ."); exit(3) ;}
     }
-
 
 
     /*** Start giving integrities to saladmakers ***/
     int cook_num, integrities[2];
     while(buffer->n_salands >= 0){
+
         
+
         /* Select two integrities */
+
         get_integrities(integrities);
 
+        //Write messages in global logfile and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "Selecting integrities %s  %s"\
         ,str_integrities[integrities[0]], str_integrities[integrities[1]]);
-        printf("%s\n", msg);
-        fflush(stdout);
-
-        //Writing in the logfile
-        sem_wait(&buffer->log);  
-        
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
-        fflush(logfile);
+        sprintf(file_msg, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+        write_messages(msg, file_msg, logfile, NULL);
 
         sem_post(&buffer->log);
         //End of writing
 
 
-        /* Find the proper salad maker, for the selected integrities */ 
+        //Find the proper salad maker, for the selected integrities
         cook_num = get_cook_num(integrities);
 
-        /* Place integrities in table */
+        //Place integrities in table
         sem_wait(&buffer->access_table);
         place_integrities(buffer->table, integrities);
         sem_post(&buffer->access_table);
 
+
+
+
         /*  Notify the saladmaker */
-        if(buffer->n_salands <= 0)break;
+
+        //Write messages in global logfile and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "Notify saladmaker %d", cook_num);
-        printf("%s\n", msg);
-        fflush(stdout);
-
-
-        //Writing in the logfile
-        printf("about to write\n");
-        sem_wait(&buffer->log);
-        printf("wrote\n");
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
-        fflush(logfile);
+        sprintf(file_msg, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+        write_messages(msg, file_msg, logfile, NULL);
 
         sem_post(&buffer->log);
         //End of writing
-
-
-        if(buffer->n_salands <= 0)break;
-        printf("about to wake cook\n");
-        sem_post(&buffer->cooks[cook_num]);
-        printf("woke cook\n");
-
         
-        //wait salad maker to take the integrities
+        //Before notify saladmaker check if job is done
         if(buffer->n_salands <= 0)break;
-        retval = sem_wait(&buffer->chef);
+        sem_post(&buffer->cooks[cook_num]);
+
+        //wait salad maker to take the integrities
+
+        if(buffer->n_salands <= 0)break;
+        sem_wait(&buffer->chef);
         printf("remaining salads %d\n", buffer->n_salands);
         fflush(stdout);
 
+
+
+        /* Man time for resting  */
+
+        //Write messages in global logfile and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "Man time for resting");
-        printf("%s\n", msg);
-        
-        //Writing to logfile
-        sem_wait(&buffer->log);
+        sprintf(file_msg, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
+        write_messages(msg, file_msg, logfile, NULL);
 
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(logfile, "[%s] [%d] [chef] [%s]\n",timeStr, pid, msg);
-        fflush(logfile);
-        
         sem_post(&buffer->log);
-
+        //End of writing
+        
         if(buffer->n_salands <= 0)break;
         rest(mantime);
+        printf("\n");
+        fflush(stdout);
+
     } 
 
+    /* Clean table */
     buffer->table[0] = EMPTY;
     buffer->table[1] = EMPTY;
 
 
     printf("Inform salad makers that job is done \n");
-    post_saladMakers(cook_num, buffer->cooks);
+    post_saladMakers(buffer->cooks);
 
-    /*** Stdout of chef: ***/
 
+
+    /***     Stdout of chef     ***/
+
+    /* Print the number of salads made */
     printf("\nTotal #salads: %d\n", numOfSalads - buffer->n_salands);
 
     for(int i = 0; i < N_SALAD_MAKERS; i++){
@@ -229,46 +204,45 @@ int main(int argc, char *argv[]){
         i, buffer->cooks_pid[i], buffer->saladsDone[i]);
     }
 
-    /* Print a list with all concured processes */
-    printf("\nTime intervals: (in inscreasing order)\n");
+
+    /* Read file and save all needed logs in records */
     fclose(logfile);
     fopen(filename, "r");
-    char ch, time_interval[100], pids[100];
+    char ch;
 
+    //Count the number of records
     int lines = 0;
-
-    //find number of lines
     while((ch = fgetc(logfile)) != EOF)
         if(ch == '\n')lines++;
 
+    //Save records
     rewind(logfile);
-    
     Record records[lines];
-    get_records(logfile, records, lines);
+    get_records(logfile, records, lines, getpid());
+
+
 
     int working_saladmaker[N_SALAD_MAKERS], has_concurent = 0, start = -1,
     prev_concurent, concurent;
-
     for(int i = 0; i < N_SALAD_MAKERS; i++)working_saladmaker[i] = 0;
 
-    /* Find concured processes */
-    for(int r = 0, i = 0; r < lines; r++){
+    /* Print all time intervals and the salad makers that working concurrently */
+    printf("\nTime intervals: (in inscreasing order)\n");
+    for(int r = 0; r < lines; r++){
 
-        prev_concurent = count_concurent(working_saladmaker);
+        prev_concurent = count_concurent(working_saladmaker, N_SALAD_MAKERS);
         
         /* Start working */
         if(!strcmp(records[r].msg_part, "Get")){           
             working_saladmaker[records[r].cook_num]++;
-            if((concurent = count_concurent(working_saladmaker)) > prev_concurent){
+            if((concurent = 
+            count_concurent(working_saladmaker, N_SALAD_MAKERS)) > prev_concurent){
                 
-                /* Start of 2 concurent processes*/
-                if(concurent == 2)
-                    start = r;
-                /* Start of 3 concurent processes - end of 2 concurent */
-                else if(concurent == 3){
-                    if(start != -1){
+                /* Start of time interval with 3 concurent processes */
+                if(concurent == 3){
+                    if(start != -1){//Print the previous time interval with 2 processes
                         printf("[%s - %s]", records[start].time, records[r-1].time );
-
+                       
                         //Print saladmakers that worked concurrently 
                         for(int j = 0; j < N_SALAD_MAKERS; j++)
                         {
@@ -276,19 +250,19 @@ int main(int argc, char *argv[]){
                                 printf(" saladmaker%d ", j);
                         }
                         printf("\n");
-
-                        start = r;
                     }
-                    else start = r;
                 }
+                /* Start of time interval with 2 or more processes */
+                if(concurent >= 2) start = r;
             }
         }
 
         /* End working  */
         else if(!strcmp(records[r].msg_part, "End") || r == lines-1){
             
-            /* End of 2 or 3 concurrent processes */
-            if((concurent = count_concurent(working_saladmaker)) >= 2 && start != -1){
+            /* End of for time interval with 2 or 3 concurrent processes */
+            if((concurent = 
+            count_concurent(working_saladmaker,N_SALAD_MAKERS)) >= 2 && start != -1){
                 printf("[%s - %s]", records[start].time, records[r].time );
                 
                 //Print saladmakers that worked concurrently 
@@ -297,21 +271,33 @@ int main(int argc, char *argv[]){
 
                 printf("\n");
                 if(concurent == 2)
-                    start = -1;
-                else if(r+1 < lines) start = r+1;
+                    start = -1;//Flag that interval beeing printed
+                else if(r+1 < lines) start = r+1;//Set the next time interval
             }
 
             working_saladmaker[records[r].cook_num] = 0;
         }
 
-        if(count_concurent(working_saladmaker) >= 2)has_concurent = 1;
-
+        if(count_concurent(working_saladmaker, N_SALAD_MAKERS) >= 2)
+            has_concurent = 1;
     }
 
     if(!has_concurent)printf("No concured processes found\n");
 
 
-    sem_destroy(&buffer->chef);
+
+    /* Destroy semaphores */
+    retval = sem_destroy(&buffer->chef) ;
+    if ( retval != 0) {
+        perror ("Couldn ’t initialize ."); exit (3) ;}
+
+    retval = sem_destroy(&buffer->log) ;
+    if ( retval != 0) {
+        perror ("Couldn ’t initialize ."); exit (3) ;}
+
+    retval = sem_destroy(&buffer->access_table) ;
+    if ( retval != 0) {
+        perror ("Couldn ’t initialize ."); exit (3) ;}
 
     for(int i = 0; i < N_SALAD_MAKERS; i++){
         retval = sem_destroy(&buffer->cooks[i]) ;
@@ -319,25 +305,13 @@ int main(int argc, char *argv[]){
         perror ("Couldn ’t initialize ."); exit (3) ;}
     }
 
+    shmdt((void *) 0);
 
     fclose(logfile);
     return 0;
 
 }
 
-
-void get_integrities(int *integrities){
-
-    int integrity;
-
-    integrities[0] = rand() % 3;
-
-    while((integrity = rand() % 3) ==  integrities[0] || integrity == integrities[1]);
-
-    integrities[1] = integrity;
-
-
-}
 
 
 int  get_input_args(int argc, char *argv[], int *numOfSalads, int *mantime){
@@ -354,64 +328,20 @@ int  get_input_args(int argc, char *argv[], int *numOfSalads, int *mantime){
         }
         return 0;
     }
-
     return -1;
 }
 
 
 
-void get_records(FILE *logfile, Record *records, int n_records){
-    
-    int i, j, flag, len = 200;
-    char line[len];
+void get_integrities(int *integrities){
 
-    int r = 0;
+    int integrity;
 
-    while (fgets(&line, len,  logfile) != NULL){
-        i = 0;
-        j = 0;
+    integrities[0] = rand() % 3;
 
-        while(line[i] != ']'){
-            if(line[i] != '[')
-                records[r].time[j++] = line[i];
-            i++;
-        }
-        records[r].time[j] = '\0';i++;//skip space
+    while((integrity = rand() % 3) ==  integrities[0] || integrity == integrities[1]);
 
-
-        j = 0;
-        while(line[i] != ']'){
-            if(line[i] != '[')
-                records[r].pid[j++] = line[i];
-            i++;
-        }
-        records[r].pid[j] = '\0';i++;//skip space
-
-
-        
-        while(line[i++] != ']');
-
-        //if not chef , save salad maker's number
-        if(getpid() != atoi(records[r].pid))
-            records[r].cook_num = line[i-2] - '0';
-        else records[r].cook_num = -1;
-
-            
-        
-        i++;//skip space
-
-        j = 0;
-        flag = 0;
-        while(line[i] != ']'){
-            if(line[i] == ' ')flag = 1;
-            if(line[i] != '[' && !flag)records[r].msg_part[j++] = line[i];
-            i++;
-        }
-
-        records[r].msg_part[j] = '\0';
-
-        r++;
-    }
+    integrities[1] = integrity;
 
 
 }
@@ -433,19 +363,17 @@ int get_cook_num(int *integrities){
 }
 
 
-void post_saladMakers(int exclude_saladMaker, sem_t *saladMakers){
-    for(int i = 0; i < N_SALAD_MAKERS; i++)
-        //if(i != exclude_saladMaker)
-        sem_post(&saladMakers[i]);
+
+void place_integrities(int *table, int *integrities)
+{
+table[0] = integrities[0]; 
+table[1] = integrities[1];
 }
 
 
-int count_concurent(int *pid){
 
-    int concured_counter = 0;
-
+void post_saladMakers(sem_t *saladMakers)
+{   
     for(int i = 0; i < N_SALAD_MAKERS; i++)
-        if(pid[i])concured_counter++;
-
-    return concured_counter;
+        sem_post(&saladMakers[i]);
 }
