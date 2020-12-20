@@ -6,19 +6,19 @@ CFLAGS = -c -Wall -std=gnu99
 
 all: chef salad_maker
 
-time_utils.o: time_utils.c
-	$(CC) $(CFLAGS) time_utils.c
+utils.o: utils.c
+	$(CC) $(CFLAGS) utils.c
 
-chef: chef.o time_utils.o my_defines.h
+chef: chef.o utils.o my_defines.h
 	@echo " Compile chef ...";
-	$(CC) -o chef chef.o time_utils.o -lpthread
+	$(CC) -o chef chef.o utils.o -lpthread
 chef.o: chef.c
 	$(CC) $(CFLAGS) chef.c
 
 
-salad_maker: cook.o time_utils.o my_defines.h
+salad_maker: cook.o utils.o my_defines.h
 	@echo " Compile internal ...";
-	$(CC) -o salad_maker cook.o time_utils.o -lpthread
+	$(CC) -o salad_maker cook.o utils.o -lpthread
 cook.o: cook.c
 	$(CC) $(CFLAGS) cook.c
 
@@ -27,4 +27,4 @@ cook.o: cook.c
 
 clean:
 	@echo " Cleaning . . ."
-	rm -f *.o chef salad_maker
+	rm -f *.o *.txt chef salad_maker

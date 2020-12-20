@@ -1,15 +1,12 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <semaphore.h>
 #include <sys/types.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include <string.h>
 #include <unistd.h>
-#include <time.h>
-#include <sys/time.h>  
 #include "my_defines.h"
-#include "time_utils.h"
+#include "utils.h"
+
 
 
 int  get_input_args(int argc, char *argv[], int *lb, int *ub,
@@ -18,19 +15,22 @@ int *id, int *cook_num);
 /* Making a salad in random time between lb and ub */
 void make_salad(int lb, int ub);   
 
+
 int isTableEmpty(int *table){return table[0] == EMPTY;}
+
 
 void getIntegrities(int *integrities, int *table)
 {integrities[0] = table[0];table[0] = EMPTY;
 integrities[1] = table[1];table[1] = EMPTY;}
 
+
+
+
 int main ( int argc , char ** argv )
 {
-    int retval, id , err , lb, ub, cook_num;
-    char timeStr[30], msg[100];
+    int id , err , lb, ub, cook_num;
+    char timeStr[30], msg[100], file_msg[100];
     Buffer *buffer;
-
-    struct timeval t2, elapsed;
 
 
     /* Get input arguments */
@@ -40,20 +40,18 @@ int main ( int argc , char ** argv )
     }
 
 
+    /* Create a logfile for current salad maker
+       and open the global logfile */
     FILE *logfile, *global_log;
     int pid = getpid();
 
     char filename[100];
     sprintf(filename, "salad_maker%d_%d.txt", cook_num, pid);
-    printf("%s\n", filename);
+    printf("Creating logfile %s\n", filename);
     logfile = fopen(filename, "a");
 
     srand(time(NULL));
 
-
-    /* Get id from command line . */
-    sscanf ( argv [1] , "%d" , & id );
-    printf ( " Allocated %d \n" , id ) ;
 
     /* Attach the segment . */
     buffer = (Buffer *)shmat(id ,( void *) 0, 0);
@@ -65,110 +63,101 @@ int main ( int argc , char ** argv )
     int integrities[3];
     integrities[2] = cook_num;//Salad maker integrity
 
-    /* Take integrities from chef(read) , write in log files */
+
+
+    /*** Start making salads with chef's integrities ***/
     while(buffer->n_salands >= 0){
 
+
+
         /* Waiting for chef notification */
+
+        //Write messages in logfiles and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "Waiting for integrities");
-
-        //Writing in the logfiles
-        fprintf(logfile, "%s\n", msg);
-        fflush(logfile);
-
-        sem_wait(&buffer->log);
-        
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        sprintf(file_msg, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
         cook_num, msg);
-        fflush(global_log);
+        write_messages(msg, file_msg, logfile, global_log);
 
         sem_post(&buffer->log);
+        //End of writing
 
         sem_wait(&buffer->cooks[cook_num]);
 
+        //Check if all salads done while waiting
+        if(isTableEmpty(buffer->table))break; 
 
-        if(isTableEmpty(buffer->table))break; //All salads done while waiting
 
 
         /* Get integrities from table */
+
         sem_wait(&buffer->access_table);
         getIntegrities(integrities, buffer->table);
         sem_post(&buffer->access_table);
-
-        fprintf(logfile,"salads remaining %d\n", buffer->n_salands);
-        fflush(logfile);
-
+        printf("remaining salads %d\n", buffer->n_salands);
+        fflush(stdout);
+ 
         //Inform chef that integrities retrieved
         sem_post(&buffer->chef);
 
-        //Writing in the logfiles
+        //Write messages in logfiles and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "Get %s   %s", \
         str_integrities[integrities[0]], str_integrities[integrities[1]]);
-
-        fprintf(logfile, "%s\n", msg);
-        fflush(logfile);
-
-        sem_wait(&buffer->log);
-        
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        sprintf(file_msg, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
         cook_num, msg);
-        fflush(global_log);
+        write_messages(msg, file_msg, logfile, global_log);
 
         sem_post(&buffer->log);
+        //End of writing
 
 
 
         /* Start making salad */
+
+        //Write messages in logfiles and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "Start making salad");
-
-        //Writing in the logfiles
-        fprintf(logfile, "%s\n", msg);
-        fflush(logfile);
-
-        sem_wait(&buffer->log);
-        
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        sprintf(file_msg, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
         cook_num, msg);
-        fflush(global_log);
+        write_messages(msg, file_msg, logfile, global_log);
 
         sem_post(&buffer->log);
+        //End of writing
+
 
         make_salad(lb,ub);
 
 
-
         /* End making salad */
+
+        //Write messages in logfiles and stdout
+        sem_wait(&buffer->log);  
+
+        time_to_string(timeStr);
         sprintf(msg, "End making salad");
-
-        //Writing in the logfiles
-        fprintf(logfile, "%s\n", msg);
-        fflush(logfile);
-
-        sem_wait(&buffer->log);
-        
-        gettimeofday(&t2, NULL);
-        time_elapsed(&elapsed, &t2, &buffer->t1);
-        time_to_string(elapsed, timeStr);
-        fprintf(global_log, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
+        sprintf(file_msg, "[%s] [%d] [Saladmaker%d] [%s]\n",timeStr, pid,\
         cook_num, msg);
-        fflush(global_log);
-
-        /* decrement total salads */
+        write_messages(msg, file_msg, logfile, global_log);
+        //Update salads done
         --buffer->n_salands;
-        /* Iscrease salads done */
         ++buffer->saladsDone[cook_num];
 
         sem_post(&buffer->log);
+        //End of writing
 
+        printf("\n");
+        fflush(stdout);  
     } 
+
+    /*In case chef wating for salad maker take integrities, 
+      while all salads done*/
     sem_post(&buffer->chef);
     
     
@@ -181,11 +170,12 @@ int main ( int argc , char ** argv )
     shmdt((void *) 0);
 
     fclose(logfile);
-
     fclose(global_log);
     return 0;
 
 }
+
+
 
 int  get_input_args(int argc, char *argv[], int *lb, int *ub,
 int *id, int *cook_num){
