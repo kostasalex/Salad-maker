@@ -7,8 +7,8 @@ Use the command "make" to compile the program. This will create two executables,
 # Running the program
 To run the "chef" executable, use the command:
 
-`./chef -n <number_of_salads> -m <mantime>
-where -m is the time in milliseconds that the chef spends selecting ingredients.`
+`./chef -n <number_of_salads> -m <mantime>`
+where -m is the time in milliseconds that the chef spends selecting ingredients.
 
 To run the "salad_maker" executable, use the command:
 
