@@ -2,7 +2,7 @@
 This project is a simulation of a chef and salad makers working together to prepare salads. The chef selects ingredients (tomato, green pepper, small onion) and places them on a shared table for the salad makers to retrieve. The salad makers then use the ingredients to make a salad in a random time between a lower bound (lb) and upper bound (ub) specified by the user. The chef and salad makers also log their actions to separate log files, as well as a global log file.
 
 # Compiling the program
-Use the command "make" to compile the program. This will create two executables, "chef" and "salad_maker", using separate compilation.
+Use the command "make" to compile the program. This will create two executables, "chef" and "salad_maker".
 
 # Running the program
 To run the "chef" executable, use the command:
